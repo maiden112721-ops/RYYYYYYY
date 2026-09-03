@@ -19,7 +19,7 @@
         <button class="tab-button" data-tab="schedule">Scheduler <span>✦</span></button>
         <button class="tab-button" data-tab="wallet">Wallet <span>₱</span></button>
       </nav>
-      <div class="today-label"><span class="pulse-dot"></span><span id="todayLabel">Friday, September 4</span></div>
+      <div class="today-label"><span class="pulse-dot"></span><span id="todayLabel">Friday, September 4</span><span class="storage-status" id="storageStatus">Demo storage</span></div>
     </header>
 
     <main>
@@ -48,6 +48,6 @@
   <dialog id="walletDialog" class="modal"><form method="dialog" class="modal-card" id="walletForm"><button class="close-button" value="cancel" aria-label="Close">×</button><p class="eyebrow">A place for a plan</p><h2>Add a wallet</h2><label>Wallet name<input id="walletName" placeholder="Little joys" required></label><label>Target amount <span class="optional">optional</span><input id="walletTarget" type="number" min="0" step="0.01" placeholder="0.00"></label><button class="primary-button full" value="default">Create wallet <span>＋</span></button></form></dialog>
   <dialog id="transactionDialog" class="modal"><form method="dialog" class="modal-card" id="transactionForm"><button class="close-button" value="cancel" aria-label="Close">×</button><p class="eyebrow">Keep the balance honest</p><h2>Record money</h2><div class="segmented transaction-type"><button type="button" class="active" data-transaction-type="withdraw">Spent</button><button type="button" data-transaction-type="deposit">Added</button></div><label>Amount<input id="transactionAmount" type="number" min="0.01" step="0.01" required></label><label>Where did it go?<input id="transactionMerchant" placeholder="Coffee, groceries..."></label><label>Wallet <span class="optional">optional</span><select id="transactionWallet"><option value="">General balance</option></select></label><p class="form-error" id="transactionError"></p><button class="primary-button full" value="default">Save transaction <span>→</span></button></form></dialog>
   <div class="toast" id="toast" role="status"></div>
-  <script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script><script src="app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script><script src="config.js"></script><script src="app.js"></script>
 </body>
 </html>

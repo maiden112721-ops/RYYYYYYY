@@ -20,6 +20,9 @@ class MemoryRepository:
     def list_letters(self) -> list[dict[str, Any]]:
         return sorted(self.letters, key=lambda item: item["created_at"], reverse=True)
 
+    def check_connection(self) -> bool:
+        return True
+
     def create_letter(self, title: str, body_html: str, created_at: datetime) -> dict[str, Any]:
         letter = {"id": str(uuid4()), "title": title, "body_html": body_html, "created_at": created_at}
         self.letters.append(letter)
@@ -74,6 +77,11 @@ class PostgresRepository:
     def _connection(self):
         return connect(self.database_url, row_factory=dict_row)
 
+    def check_connection(self) -> bool:
+        with self._connection() as connection:
+            connection.execute("select 1")
+        return True
+
     def list_letters(self) -> list[dict[str, Any]]:
         with self._connection() as connection:
             return list(connection.execute("select id, title, body_html, created_at from letters order by created_at desc").fetchall())
@@ -116,6 +124,8 @@ class PostgresRepository:
         with self._connection() as connection:
             if wallet_id is not None:
                 connection.execute("select id from wallets where id = %s for update", (wallet_id,))
+            else:
+                connection.execute("select pg_advisory_xact_lock(hashtext('iloveyoury:general-balance'))")
             balance = connection.execute("select coalesce(sum(case when type = 'deposit' then amount else -amount end), 0) as balance from transactions where wallet_id is not distinct from %s", (wallet_id,)).fetchone()["balance"]
             if values["type"] == "withdraw" and values["amount"] > balance:
                 raise ValueError("This withdrawal is larger than the available balance.")

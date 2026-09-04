@@ -20,6 +20,12 @@ def test_letter_pin_gate():
     assert '<script>' not in response.json()['body_html']
 
 
+def test_health_reports_memory_storage_for_local_tests():
+    response = client.get('/api/health')
+    assert response.status_code == 200
+    assert response.json()['storage'] == 'memory'
+
+
 def test_wallet_cannot_overdraw():
     wallet = client.post('/api/wallets', json={'name': 'Savings'}).json()
     client.post('/api/transactions', json={'type': 'deposit', 'amount': '100', 'wallet_id': wallet['id']})

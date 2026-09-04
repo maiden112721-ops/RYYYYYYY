@@ -81,7 +81,15 @@ class TransactionCreate(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "iloveyoury-api"}
+    try:
+        repository.check_connection()
+    except Exception as error:
+        raise HTTPException(status_code=503, detail="Database connection is unavailable.") from error
+    return {
+        "status": "ok",
+        "service": "iloveyoury-api",
+        "storage": "supabase" if isinstance(repository, PostgresRepository) else "memory",
+    }
 
 
 @app.get("/api/letters")

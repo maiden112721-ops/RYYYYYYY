@@ -1,6 +1,5 @@
 from datetime import datetime
 from decimal import Decimal
-from html import escape
 from os import getenv
 from typing import Literal
 from uuid import UUID, uuid4
@@ -8,6 +7,8 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
+
+from .database import MemoryRepository, PostgresRepository, create_repository
 
 LETTER_PIN = getenv("LETTER_PIN", "091425")
 FRONTEND_ORIGIN = getenv("FRONTEND_ORIGIN", "*")
@@ -21,10 +22,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-letters: list[dict] = []
-reminders: list[dict] = []
-wallets: list[dict] = []
-transactions: list[dict] = []
+repository = create_repository()
+
+# Kept as aliases for the local test suite and preview mode.
+letters = repository.letters if isinstance(repository, MemoryRepository) else []
+reminders = repository.reminders if isinstance(repository, MemoryRepository) else []
+wallets = repository.wallets if isinstance(repository, MemoryRepository) else []
+transactions = repository.transactions if isinstance(repository, MemoryRepository) else []
 
 
 def now() -> datetime:
@@ -75,11 +79,6 @@ class TransactionCreate(BaseModel):
     wallet_id: UUID | None = None
 
 
-def with_balance(wallet: dict) -> dict:
-    balance = sum((Decimal(str(t["amount"])) if t["type"] == "deposit" else -Decimal(str(t["amount"])) for t in transactions if t["wallet_id"] == wallet["id"]), Decimal("0"))
-    return {**wallet, "balance": balance}
-
-
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "iloveyoury-api"}
@@ -87,64 +86,52 @@ def health():
 
 @app.get("/api/letters")
 def get_letters():
-    return sorted(letters, key=lambda item: item["created_at"], reverse=True)
+    return repository.list_letters()
 
 
 @app.post("/api/letters", status_code=201)
 def create_letter(payload: LetterCreate):
     if payload.pin != LETTER_PIN:
         raise HTTPException(status_code=403, detail="That PIN is not quite right.")
-    letter = {"id": str(uuid4()), "title": payload.title.strip(), "body_html": clean_html(payload.body_html), "created_at": now().isoformat()}
-    letters.append(letter)
-    return letter
+    return repository.create_letter(payload.title.strip(), clean_html(payload.body_html), now())
 
 
 @app.get("/api/reminders")
 def get_reminders():
-    return reminders
+    return repository.list_reminders()
 
 
 @app.post("/api/reminders", status_code=201)
 def create_reminder(payload: ReminderCreate):
-    reminder = {"id": str(uuid4()), **payload.model_dump(mode="json"), "created_at": now().isoformat()}
-    reminders.append(reminder)
-    return reminder
+    return repository.create_reminder(payload.model_dump(), now())
 
 
 @app.delete("/api/reminders/{reminder_id}", status_code=204)
 def delete_reminder(reminder_id: UUID):
-    for index, reminder in enumerate(reminders):
-        if reminder["id"] == str(reminder_id):
-            reminders.pop(index)
-            return
-    raise HTTPException(status_code=404, detail="Reminder not found")
+    if not repository.delete_reminder(reminder_id):
+        raise HTTPException(status_code=404, detail="Reminder not found")
 
 
 @app.get("/api/wallets")
 def get_wallets():
-    return [with_balance(wallet) for wallet in wallets]
+    return repository.list_wallets()
 
 
 @app.post("/api/wallets", status_code=201)
 def create_wallet(payload: WalletCreate):
-    wallet = {"id": str(uuid4()), **payload.model_dump(mode="json"), "created_at": now().isoformat()}
-    wallets.append(wallet)
-    return with_balance(wallet)
+    return repository.create_wallet(payload.model_dump(), now())
 
 
 @app.get("/api/transactions")
 def get_transactions():
-    return transactions
+    return repository.list_transactions()
 
 
 @app.post("/api/transactions", status_code=201)
 def create_transaction(payload: TransactionCreate):
-    if payload.wallet_id and not any(wallet["id"] == str(payload.wallet_id) for wallet in wallets):
+    if payload.wallet_id and not repository.wallet_exists(payload.wallet_id):
         raise HTTPException(status_code=404, detail="Wallet not found")
-    if payload.type == "withdraw":
-        balance = sum((Decimal(str(t["amount"])) if t["type"] == "deposit" else -Decimal(str(t["amount"])) for t in transactions if t["wallet_id"] == str(payload.wallet_id)), Decimal("0"))
-        if payload.amount > balance:
-            raise HTTPException(status_code=400, detail="This withdrawal is larger than the available balance.")
-    transaction = {"id": str(uuid4()), **payload.model_dump(mode="json"), "occurred_at": now().isoformat()}
-    transactions.append(transaction)
-    return transaction
+    try:
+        return repository.create_transaction(payload.model_dump(), now())
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error

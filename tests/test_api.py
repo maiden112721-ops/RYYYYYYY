@@ -23,5 +23,6 @@ def test_letter_pin_gate():
 def test_wallet_cannot_overdraw():
     wallet = client.post('/api/wallets', json={'name': 'Savings'}).json()
     client.post('/api/transactions', json={'type': 'deposit', 'amount': '100', 'wallet_id': wallet['id']})
+    assert client.get('/api/wallets').json()[0]['balance'] == 100
     response = client.post('/api/transactions', json={'type': 'withdraw', 'amount': '101', 'wallet_id': wallet['id']})
     assert response.status_code == 400

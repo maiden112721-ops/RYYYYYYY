@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from .database import MemoryRepository, PostgresRepository, create_repository
 
 LETTER_PIN = getenv("LETTER_PIN", "091425")
-FRONTEND_ORIGIN = getenv("FRONTEND_ORIGIN", "*")
+FRONTEND_ORIGIN = getenv("FRONTEND_ORIGIN", "*").strip().rstrip("/") or "*"
 
 app = FastAPI(title="ILOVEYOURY API", version="0.1.0")
 app.add_middleware(
@@ -44,12 +44,14 @@ def clean_html(value: str) -> str:
 
 
 class LetterCreate(BaseModel):
+    client_id: UUID = Field(default_factory=uuid4)
     title: str = Field(min_length=1, max_length=160)
     body_html: str = Field(min_length=1, max_length=50000)
     pin: str = Field(min_length=1, max_length=32)
 
 
 class ReminderCreate(BaseModel):
+    client_id: UUID = Field(default_factory=uuid4)
     title: str = Field(min_length=1, max_length=160)
     description: str = Field(default="", max_length=2000)
     tags: list[str] = Field(default_factory=list, max_length=8)
@@ -67,11 +69,13 @@ class ReminderCreate(BaseModel):
 
 
 class WalletCreate(BaseModel):
+    client_id: UUID = Field(default_factory=uuid4)
     name: str = Field(min_length=1, max_length=100)
     target: Decimal | None = Field(default=None, ge=0, decimal_places=2)
 
 
 class TransactionCreate(BaseModel):
+    client_id: UUID = Field(default_factory=uuid4)
     type: Literal["deposit", "withdraw"]
     amount: Decimal = Field(gt=0, decimal_places=2)
     merchant: str = Field(default="", max_length=160)
@@ -101,7 +105,7 @@ def get_letters():
 def create_letter(payload: LetterCreate):
     if payload.pin != LETTER_PIN:
         raise HTTPException(status_code=403, detail="That PIN is not quite right.")
-    return repository.create_letter(payload.title.strip(), clean_html(payload.body_html), now())
+    return repository.create_letter(payload.client_id, payload.title.strip(), clean_html(payload.body_html), now())
 
 
 @app.get("/api/reminders")

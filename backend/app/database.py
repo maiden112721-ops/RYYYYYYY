@@ -23,8 +23,11 @@ class MemoryRepository:
     def check_connection(self) -> bool:
         return True
 
-    def create_letter(self, title: str, body_html: str, created_at: datetime) -> dict[str, Any]:
-        letter = {"id": str(uuid4()), "title": title, "body_html": body_html, "created_at": created_at}
+    def create_letter(self, client_id: UUID, title: str, body_html: str, created_at: datetime) -> dict[str, Any]:
+        existing = next((item for item in self.letters if item["client_id"] == str(client_id)), None)
+        if existing:
+            return existing
+        letter = {"id": str(uuid4()), "client_id": str(client_id), "title": title, "body_html": body_html, "created_at": created_at}
         self.letters.append(letter)
         return letter
 
@@ -32,6 +35,10 @@ class MemoryRepository:
         return self.reminders
 
     def create_reminder(self, values: dict[str, Any], created_at: datetime) -> dict[str, Any]:
+        values = {**values, "client_id": str(values["client_id"])}
+        existing = next((item for item in self.reminders if item["client_id"] == values["client_id"]), None)
+        if existing:
+            return existing
         reminder = {"id": str(uuid4()), **values, "created_at": created_at}
         self.reminders.append(reminder)
         return reminder
@@ -47,6 +54,10 @@ class MemoryRepository:
         return [{**wallet, "balance": self.wallet_balance(wallet["id"])} for wallet in self.wallets]
 
     def create_wallet(self, values: dict[str, Any], created_at: datetime) -> dict[str, Any]:
+        values = {**values, "client_id": str(values["client_id"])}
+        existing = next((item for item in self.wallets if item["client_id"] == values["client_id"]), None)
+        if existing:
+            return {**existing, "balance": self.wallet_balance(existing["id"])}
         wallet = {"id": str(uuid4()), **values, "created_at": created_at}
         self.wallets.append(wallet)
         return {**wallet, "balance": Decimal("0")}
@@ -61,6 +72,10 @@ class MemoryRepository:
         return self.transactions
 
     def create_transaction(self, values: dict[str, Any], occurred_at: datetime) -> dict[str, Any]:
+        values = {**values, "client_id": str(values["client_id"])}
+        existing = next((item for item in self.transactions if item["client_id"] == values["client_id"]), None)
+        if existing:
+            return existing
         wallet_id = str(values["wallet_id"]) if values.get("wallet_id") else None
         values = {**values, "wallet_id": wallet_id}
         if values["type"] == "withdraw" and Decimal(str(values["amount"])) > self.wallet_balance(wallet_id):
@@ -84,19 +99,19 @@ class PostgresRepository:
 
     def list_letters(self) -> list[dict[str, Any]]:
         with self._connection() as connection:
-            return list(connection.execute("select id, title, body_html, created_at from letters order by created_at desc").fetchall())
+            return list(connection.execute("select id, client_id, title, body_html, created_at from letters order by created_at desc").fetchall())
 
-    def create_letter(self, title: str, body_html: str, created_at: datetime) -> dict[str, Any]:
+    def create_letter(self, client_id: UUID, title: str, body_html: str, created_at: datetime) -> dict[str, Any]:
         with self._connection() as connection:
-            return connection.execute("insert into letters (title, body_html, created_at) values (%s, %s, %s) returning id, title, body_html, created_at", (title, body_html, created_at)).fetchone()
+            return connection.execute("insert into letters (client_id, title, body_html, created_at) values (%s, %s, %s, %s) on conflict (client_id) do update set title = excluded.title, body_html = excluded.body_html returning id, client_id, title, body_html, created_at", (client_id, title, body_html, created_at)).fetchone()
 
     def list_reminders(self) -> list[dict[str, Any]]:
         with self._connection() as connection:
-            return list(connection.execute("select id, title, description, tags, start_at, end_at, recurrence, created_at from reminders order by start_at").fetchall())
+            return list(connection.execute("select id, client_id, title, description, tags, start_at, end_at, recurrence, created_at from reminders order by start_at").fetchall())
 
     def create_reminder(self, values: dict[str, Any], created_at: datetime) -> dict[str, Any]:
         with self._connection() as connection:
-            return connection.execute("insert into reminders (title, description, tags, start_at, end_at, recurrence, created_at) values (%s, %s, %s, %s, %s, %s, %s) returning id, title, description, tags, start_at, end_at, recurrence, created_at", (*values.values(), created_at)).fetchone()
+            return connection.execute("insert into reminders (client_id, title, description, tags, start_at, end_at, recurrence, created_at) values (%s, %s, %s, %s, %s, %s, %s, %s) on conflict (client_id) do update set title = excluded.title, description = excluded.description, tags = excluded.tags, start_at = excluded.start_at, end_at = excluded.end_at, recurrence = excluded.recurrence returning id, client_id, title, description, tags, start_at, end_at, recurrence, created_at", (values["client_id"], values["title"], values["description"], values["tags"], values["start_at"], values["end_at"], values["recurrence"], created_at)).fetchone()
 
     def delete_reminder(self, reminder_id: UUID) -> bool:
         with self._connection() as connection:
@@ -105,11 +120,11 @@ class PostgresRepository:
 
     def list_wallets(self) -> list[dict[str, Any]]:
         with self._connection() as connection:
-            return list(connection.execute("select w.id, w.name, w.target, w.created_at, coalesce(sum(case when t.type = 'deposit' then t.amount else -t.amount end), 0) as balance from wallets w left join transactions t on t.wallet_id = w.id group by w.id order by w.created_at").fetchall())
+            return list(connection.execute("select w.id, w.client_id, w.name, w.target, w.created_at, coalesce(sum(case when t.type = 'deposit' then t.amount else -t.amount end), 0) as balance from wallets w left join transactions t on t.wallet_id = w.id group by w.id order by w.created_at").fetchall())
 
     def create_wallet(self, values: dict[str, Any], created_at: datetime) -> dict[str, Any]:
         with self._connection() as connection:
-            return connection.execute("insert into wallets (name, target, created_at) values (%s, %s, %s) returning id, name, target, created_at", (*values.values(), created_at)).fetchone() | {"balance": Decimal("0")}
+            return connection.execute("insert into wallets (client_id, name, target, created_at) values (%s, %s, %s, %s) on conflict (client_id) do update set name = excluded.name, target = excluded.target returning id, client_id, name, target, created_at", (values["client_id"], values["name"], values["target"], created_at)).fetchone() | {"balance": Decimal("0")}
 
     def wallet_exists(self, wallet_id: UUID) -> bool:
         with self._connection() as connection:
@@ -117,7 +132,7 @@ class PostgresRepository:
 
     def list_transactions(self) -> list[dict[str, Any]]:
         with self._connection() as connection:
-            return list(connection.execute("select id, wallet_id, type, amount, merchant, note, occurred_at from transactions order by occurred_at desc").fetchall())
+            return list(connection.execute("select id, client_id, wallet_id, type, amount, merchant, note, occurred_at from transactions order by occurred_at desc").fetchall())
 
     def create_transaction(self, values: dict[str, Any], occurred_at: datetime) -> dict[str, Any]:
         wallet_id = values.get("wallet_id")
@@ -129,7 +144,7 @@ class PostgresRepository:
             balance = connection.execute("select coalesce(sum(case when type = 'deposit' then amount else -amount end), 0) as balance from transactions where wallet_id is not distinct from %s", (wallet_id,)).fetchone()["balance"]
             if values["type"] == "withdraw" and values["amount"] > balance:
                 raise ValueError("This withdrawal is larger than the available balance.")
-            return connection.execute("insert into transactions (wallet_id, type, amount, merchant, note, occurred_at) values (%s, %s, %s, %s, %s, %s) returning id, wallet_id, type, amount, merchant, note, occurred_at", (wallet_id, values["type"], values["amount"], values["merchant"], values["note"], occurred_at)).fetchone()
+            return connection.execute("insert into transactions (client_id, wallet_id, type, amount, merchant, note, occurred_at) values (%s, %s, %s, %s, %s, %s, %s) on conflict (client_id) do update set wallet_id = excluded.wallet_id, type = excluded.type, amount = excluded.amount, merchant = excluded.merchant, note = excluded.note returning id, client_id, wallet_id, type, amount, merchant, note, occurred_at", (values["client_id"], wallet_id, values["type"], values["amount"], values["merchant"], values["note"], occurred_at)).fetchone()
 
 
 def create_repository() -> MemoryRepository | PostgresRepository:
